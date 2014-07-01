@@ -1,0 +1,24 @@
+<launch>
+  <!-- ARGUMENT DEFINITIONS -->
+  <arg name="vis" default="false" /> <!-- run rviz? -->
+
+  <!-- static transform from omni base to trep world -->
+  <node pkg="tf" type="static_transform_publisher" name="base_trep_broadcaster"
+	args="0.20 0 0.035 0 0 0 base trep_world 100" />
+
+  <!-- startup omni -->
+  <include file="$(find phantom_omni)/launch/omni_headless.launch" />
+
+  <!-- startup simulator node -->
+  <node pkg="trep_omni" type="spherical_pend_simulator.py" name="simulator"
+	respawn="true" output="screen" />
+  
+  <!-- rviz if needed -->
+  <group if="$(arg vis)">
+    <node pkg="rviz" type="rviz" respawn="false" name="rviz" 
+	  args="-d $(find trep_omni)/launch/trep_omni_config.rviz" />
+  </group>
+
+</launch>
+
+  
