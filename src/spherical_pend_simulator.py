@@ -79,10 +79,6 @@ class PendSimulator:
 
     def __init__(self):
         rospy.loginfo("Creating PendSimulator class")
-        # define initial config:
-        # self.q0 = np.zeros(NQ)
-        # self.q0[self.system.get_config('zs').index] = -L
-        # self.q0[-1] = -L
         # define running flag:
         self.running_flag = False
         self.grey_flag = False
@@ -108,7 +104,7 @@ class PendSimulator:
         self.mass_marker = VM.Marker()
         self.mass_marker.action = VM.Marker.ADD
         self.mass_marker.color = ColorRGBA(*[1.0, 1.0, 1.0, 1.0])
-        self.mass_marker.header.frame_id = SIMFRAME
+        self.mass_marker.header.frame_id = rospy.get_namespace() + SIMFRAME # for some reason rviz warns about non-qualified names without namespace
         self.mass_marker.lifetime = rospy.Duration(5*DT)
         self.mass_marker.scale = GM.Vector3(*[0.05, 0.05, 0.05])
         self.mass_marker.type = VM.Marker.SPHERE
@@ -185,12 +181,7 @@ class PendSimulator:
         p.point.z = ptrans[2]
         self.mass_pub.publish(p)
         # now we can send the transform:
-        # ts = TransformStamped()
-        # ts.header = p.header
-        # ts.child_frame_id = MASSFRAME
         qtrans = TR.quaternion_from_matrix(gwm)
-        # ts.transform.translation = geometry_msgs.msg.Vector3(*ptrans)
-        # ts.transform.rotation = geometry_msgs.msg.Quaternion(*qtrans)
         self.br.sendTransform(ptrans, qtrans, p.header.stamp, MASSFRAME, SIMFRAME)
 
         # now we can publish the markers:
@@ -232,10 +223,12 @@ class PendSimulator:
                        self.system.q[self.system.get_config('ys').index],
                        self.system.q[self.system.get_config('zs').index]])
         fvec = lam*((ps-pm)/np.linalg.norm(ps-pm))
+        # the following transform was figured out only through
+        # experimentation. The frame that forces are rendered in is not aligned
+        # with /trep_world or /base:
         fvec2 = np.array([fvec[1], fvec[2], fvec[0]])
         f = GM.Vector3(*fvec2)
         p = GM.Vector3(*position)
-        # p = GM.Vector3()
         self.force_pub.publish(OmniFeedback(force=f, position=p))
         return
         
@@ -252,6 +245,7 @@ class PendSimulator:
             rospy.loginfo("Integration stopped")
             self.grey_flag = False
             self.running_flag = False
+            self.force_pub.publish(OmniFeedback(force=GM.Vector3(), position=GM.Vector3()))
         return
 
 

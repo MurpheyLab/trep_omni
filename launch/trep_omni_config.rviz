@@ -51,9 +51,27 @@ Visualization Manager:
       Reference Frame: <Fixed Frame>
       Value: true
     - Class: rviz/TF
-      Enabled: false
+      Enabled: true
       Frame Timeout: 15
       Frames:
+        /base:
+          Value: false
+        /lower_arm:
+          Value: false
+        /pend_mass:
+          Value: true
+        /stylus:
+          Value: true
+        /torso:
+          Value: false
+        /trep_world:
+          Value: true
+        /upper_arm:
+          Value: false
+        /wrist1:
+          Value: false
+        /wrist2:
+          Value: false
         All Enabled: false
       Marker Scale: 1
       Name: TF
@@ -61,9 +79,19 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
       Tree:
-        {}
+        /base:
+          /torso:
+            /upper_arm:
+              /lower_arm:
+                /wrist1:
+                  /wrist2:
+                    /stylus:
+                      {}
+          /trep_world:
+            /pend_mass:
+              {}
       Update Interval: 0
-      Value: false
+      Value: true
     - Alpha: 0.75
       Class: rviz/RobotModel
       Collision Enabled: false
@@ -144,17 +172,17 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 0.841111
+      Distance: 1.56116
       Focal Point:
-        X: 0.536097
-        Y: -0.498309
-        Z: 0.349521
+        X: 0.27293
+        Y: -0.208095
+        Z: 0.209661
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.455398
+      Pitch: 0.510398
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.5654
+      Yaw: 5.1204
     Saved: ~
 Window Geometry:
   Displays:
