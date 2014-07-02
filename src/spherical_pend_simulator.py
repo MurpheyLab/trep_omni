@@ -13,6 +13,7 @@ SUBSCRIBERS:
 
 PUBLISHERS:
     - mass_point (PointStamped)
+    - visualization_marker_array (MarkerArray)
 
 SERVICES:
 
@@ -26,9 +27,10 @@ import tf
 from tf import transformations as TR
 from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import TransformStamped
-import geometry_msgs.msg
+import geometry_msgs.msg as GM
 from phantom_omni.msg import PhantomButtonEvent
-
+from std_msgs.msg import ColorRGBA
+import visualization_msgs.msg as VM
 
 ###################
 # NON-ROS IMPORTS #
@@ -36,6 +38,7 @@ from phantom_omni.msg import PhantomButtonEvent
 import trep
 from trep import tx, ty, tz, rx, ry, rz
 import numpy as np
+import copy
 
 
 ####################
@@ -66,10 +69,10 @@ def build_system():
     system.import_frames(frames)
     trep.potentials.Gravity(system, (0,0,-g))
     trep.forces.Damping(system, B)
-
     return system
 
 
+    
 class PendSimulator:
 
     def __init__(self):
@@ -79,17 +82,43 @@ class PendSimulator:
         # define running flag:
         self.running_flag = False
         self.grey_flag = False
+
+        # setup markers
+        self.setup_markers()
         
         # setup publishers, subscribers, timers:
         self.button_sub = rospy.Subscriber("omni1_button", PhantomButtonEvent,
                                            self.buttoncb)
         self.sim_timer = rospy.Timer(rospy.Duration(DT), self.timercb)
         self.mass_pub = rospy.Publisher("mass_point", PointStamped)
+        self.marker_pub = rospy.Publisher("visualization_marker_array", VM.MarkerArray)
         self.br = tf.TransformBroadcaster()
         self.listener = tf.TransformListener()
 
         return
 
+    def setup_markers(self):
+        self.markers = VM.MarkerArray()
+        # mass marker
+        self.mass_marker = VM.Marker()
+        self.mass_marker.action = VM.Marker.ADD
+        self.mass_marker.color = ColorRGBA(*[1.0, 1.0, 1.0, 1.0])
+        self.mass_marker.header.frame_id = SIMFRAME
+        self.mass_marker.lifetime = rospy.Duration(5*DT)
+        self.mass_marker.scale = GM.Vector3(*[0.05, 0.05, 0.05])
+        self.mass_marker.type = VM.Marker.SPHERE
+        self.mass_marker.id = 0
+        # link marker
+        self.link_marker = copy.deepcopy(self.mass_marker)
+        self.link_marker.type = VM.Marker.LINE_STRIP
+        self.link_marker.color = ColorRGBA(*[0.1, 0.1, 0.1, 1.0])
+        self.link_marker.scale = GM.Vector3(*[0.005, 0.05, 0.05])
+        self.link_marker.id = 1
+        self.markers.markers.append(self.mass_marker)
+        self.markers.markers.append(self.link_marker)
+        return
+    
+        
     def setup_integrator(self):
         self.system = build_system()
         self.mvi = trep.MidpointVI(self.system)
@@ -128,7 +157,7 @@ class PendSimulator:
         p = PointStamped()
         p.header.stamp = rospy.Time.now()
         p.header.frame_id = SIMFRAME
-        # get transform from world to mass frame:
+        # get transform from trep world to mass frame:
         gwm = self.system.get_frame(MASSFRAME).g()
         ptrans = gwm[0:3, -1]
         # print ptrans
@@ -145,10 +174,18 @@ class PendSimulator:
         # ts.transform.rotation = geometry_msgs.msg.Quaternion(*qtrans)
         self.br.sendTransform(ptrans, qtrans, p.header.stamp, MASSFRAME, SIMFRAME)
 
+        # now we can publish the markers:
+        for m in self.markers.markers:
+            m.header.stamp = p.header.stamp
+        self.mass_marker.pose = GM.Pose(position=GM.Point(*ptrans))
+        p1 = GM.Point(*ptrans)
+        p2 = GM.Point(*ucont)
+        self.link_marker.points = [p1, p2]
+        self.marker_pub.publish(self.markers)
         return
         
         
-        
+
         
     def buttoncb(self, data):
         if data.grey_button == 1 and data.white_button == 0:
