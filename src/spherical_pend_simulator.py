@@ -14,6 +14,7 @@ SUBSCRIBERS:
 PUBLISHERS:
     - mass_point (PointStamped)
     - visualization_marker_array (MarkerArray)
+    - omni1_force_feedback (phantom_omni/OmniFeedback)
 
 SERVICES:
 
@@ -29,6 +30,7 @@ from geometry_msgs.msg import PointStamped
 from geometry_msgs.msg import TransformStamped
 import geometry_msgs.msg as GM
 from phantom_omni.msg import PhantomButtonEvent
+from phantom_omni.msg import OmniFeedback
 from std_msgs.msg import ColorRGBA
 import visualization_msgs.msg as VM
 
@@ -45,7 +47,7 @@ import copy
 # GLOBAL CONSTANTS #
 ####################
 DT = 1/100.
-M = 0.25 # kg
+M = 0.1 # kg
 L = 0.5 # m
 B = 0.01 # damping
 g = 9.81 #m/s^2
@@ -53,20 +55,20 @@ BASEFRAME = "base"
 CONTFRAME = "stylus"
 SIMFRAME = "trep_world"
 MASSFRAME = "pend_mass"
-NQ = 5
+NQ = 6
 NU = 3
 
 def build_system():
     system = trep.System()
-
     frames = [
         tx('xs', name='x-stylus', kinematic=True), [
             ty('ys', name='y-stylus', kinematic=True), [
-                tz('zs', name='z-stylus', kinematic=True), [
-                    rx('theta', name='roll'), [
-                        ry('phi', name='pitch'), [
-                            tz(-L, name=MASSFRAME, mass=M)]]]]]]
+                tz('zs', name='z-stylus', kinematic=True)]],
+        tx('xm', name='x-mass'), [
+            ty('ym', name='y-mass'), [
+                tz('zm', name=MASSFRAME, mass=M)]]]
     system.import_frames(frames)
+    trep.constraints.Distance(system, MASSFRAME, 'z-stylus', L, name="Link")
     trep.potentials.Gravity(system, (0,0,-g))
     trep.forces.Damping(system, B)
     return system
@@ -78,7 +80,9 @@ class PendSimulator:
     def __init__(self):
         rospy.loginfo("Creating PendSimulator class")
         # define initial config:
-        self.q0 = np.zeros(NQ)
+        # self.q0 = np.zeros(NQ)
+        # self.q0[self.system.get_config('zs').index] = -L
+        # self.q0[-1] = -L
         # define running flag:
         self.running_flag = False
         self.grey_flag = False
@@ -92,6 +96,7 @@ class PendSimulator:
         self.sim_timer = rospy.Timer(rospy.Duration(DT), self.timercb)
         self.mass_pub = rospy.Publisher("mass_point", PointStamped)
         self.marker_pub = rospy.Publisher("visualization_marker_array", VM.MarkerArray)
+        self.force_pub = rospy.Publisher("omni1_force_feedback", OmniFeedback)
         self.br = tf.TransformBroadcaster()
         self.listener = tf.TransformListener()
 
@@ -122,7 +127,21 @@ class PendSimulator:
     def setup_integrator(self):
         self.system = build_system()
         self.mvi = trep.MidpointVI(self.system)
-        # self.mvi.initialize_from_configs(0, self.q0, DT, self.q0)
+        # get the position of the omni in the trep frame
+        if self.listener.frameExists(SIMFRAME) and self.listener.frameExists(CONTFRAME):
+            t = self.listener.getLatestCommonTime(SIMFRAME, CONTFRAME)
+            try:
+                position, quaternion = self.listener.lookupTransform(SIMFRAME, CONTFRAME, t)
+            except (tf.Exception):
+                rospy.logerr("Could not transform from "\
+                             "{0:s} to {1:s}".format(SIMFRAME,CONTFRAME))
+                return
+        else:
+            rospy.logerr("Could not find required frames "\
+                         "for transformation from {0:s} to {1:s}".format(SIMFRAME,CONTFRAME))
+            return
+        self.q0 = np.hstack((position, position))
+        self.q0[self.system.get_config('zm').index] -= L
         self.mvi.initialize_from_state(0, self.q0, np.zeros(self.system.nQd))
         return
 
@@ -182,10 +201,43 @@ class PendSimulator:
         p2 = GM.Point(*ucont)
         self.link_marker.points = [p1, p2]
         self.marker_pub.publish(self.markers)
+
+        # now we can render the forces:
+        self.render_forces()
+        
         return
         
-        
 
+    def render_forces(self):
+        # get the position of the stylus in the omni's base frame
+        if self.listener.frameExists(BASEFRAME) and self.listener.frameExists(CONTFRAME):
+            t = self.listener.getLatestCommonTime(BASEFRAME, CONTFRAME)
+            try:
+                position, quaternion = self.listener.lookupTransform(BASEFRAME, CONTFRAME, t)
+            except (tf.Exception):
+                rospy.logerr("Could not transform from "\
+                             "{0:s} to {1:s}".format(BASEFRAME,CONTFRAME))
+                return
+        else:
+            rospy.logerr("Could not find required frames "\
+                         "for transformation from {0:s} to {1:s}".format(BASEFRAME,CONTFRAME))
+            return
+        # get force magnitude
+        lam = self.system.lambda_()
+        # get vector components
+        pm = np.array([self.system.q[self.system.get_config('xm').index],
+                       self.system.q[self.system.get_config('ym').index],
+                       self.system.q[self.system.get_config('zm').index]])
+        ps = np.array([self.system.q[self.system.get_config('xs').index],
+                       self.system.q[self.system.get_config('ys').index],
+                       self.system.q[self.system.get_config('zs').index]])
+        fvec = lam*((ps-pm)/np.linalg.norm(ps-pm))
+        fvec2 = np.array([fvec[1], fvec[2], fvec[0]])
+        f = GM.Vector3(*fvec2)
+        p = GM.Vector3(*position)
+        # p = GM.Vector3()
+        self.force_pub.publish(OmniFeedback(force=f, position=p))
+        return
         
     def buttoncb(self, data):
         if data.grey_button == 1 and data.white_button == 0:
