@@ -47,7 +47,7 @@ import copy
 # GLOBAL CONSTANTS #
 ####################
 DT = 1/100.
-M = 0.1 # kg
+M = 0.04 #kg
 L = 0.5 # m
 B = 0.01 # damping
 g = 9.81 #m/s^2
@@ -55,8 +55,8 @@ BASEFRAME = "base"
 CONTFRAME = "stylus"
 SIMFRAME = "trep_world"
 MASSFRAME = "pend_mass"
-NQ = 6
-NU = 3
+NQ = 6 ####number of configuration variables in the system
+NU = 3 ####number of inputs in the system
 
 def build_system():
     system = trep.System()
@@ -67,8 +67,12 @@ def build_system():
         tx('xm', name='x-mass'), [
             ty('ym', name='y-mass'), [
                 tz('zm', name=MASSFRAME, mass=M)]]]
-    system.import_frames(frames)
-    trep.constraints.Distance(system, MASSFRAME, 'z-stylus', L, name="Link")
+    system.import_frames(frames)#### adds children frame to the world frame system
+    trep.constraints.Distance(system, MASSFRAME, 'z-stylus', L, name="Link") ###enforces constraint between between the mass frame and the end of the stylus
+    
+###use two PointOnPlane constraints to constrain point to a line
+
+###trep.constraints.PointOnPlane(system, MASSFRAME, 'z-stylus', L, name="Link") ###enforces constraint between between the mass frame and the end of the stylus
     trep.potentials.Gravity(system, (0,0,-g))
     trep.forces.Damping(system, B)
     return system
@@ -138,7 +142,7 @@ class PendSimulator:
             return
         self.q0 = np.hstack((position, position))
         self.q0[self.system.get_config('zm').index] -= L
-        self.mvi.initialize_from_state(0, self.q0, np.zeros(self.system.nQd))
+        self.mvi.initialize_from_state(0, self.q0, np.zeros(self.system.nQd)) ###system.nQD gives number of dyanmic configuration vaiables
         return
 
 
@@ -233,15 +237,18 @@ class PendSimulator:
         return
         
     def buttoncb(self, data):
-        if data.grey_button == 1 and data.white_button == 0:
+        if data.grey_button == 1 and data.white_button == 0 and self.running_flag == False:
             rospy.loginfo("Integration primed")
             self.grey_flag = True
-        elif data.grey_button == 0 and data.white_button == 0 and self.grey_flag == True:
+        elif data.grey_button == 0 and data.white_button == 0 and self.grey_flag == True and self.running_flag == False:
             # then we previously pushed only the grey button, and we just released it
             rospy.loginfo("Starting integration")
             self.setup_integrator()
             self.running_flag = True
-        else:
+        elif data.grey_button == 0 and data.white_button == 0 and self.grey_flag == True and self.running_flag == True:
+            # then the sim is already running and nothing should happend
+            rospy.loginfo("Integration already running")
+        elif data.white_button == 1:
             rospy.loginfo("Integration stopped")
             self.grey_flag = False
             self.running_flag = False
